@@ -1,0 +1,666 @@
+Producer-Consumer Using Threads + Mutex + Condition Variables (Finite Execution)
+---------------------------------------------------------------------------------
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+using namespace std;
+
+queue<int> bufferQ;                
+const int BUFFER_SIZE = 5;
+const int TOTAL_ITEMS = 35;        // produce 10 items total
+
+mutex mtx;
+condition_variable notFull, notEmpty;
+
+bool finished = false;             // indicates producers are done
+
+void producer() {
+    for (int item = 1; item <= TOTAL_ITEMS; item++) {
+        unique_lock<mutex> lock(mtx);
+
+        notFull.wait(lock, [](){ return bufferQ.size() < BUFFER_SIZE; });
+
+        bufferQ.push(item);
+        cout << "Producer produced " << item << endl;
+
+        notEmpty.notify_one();
+    }
+
+    unique_lock<mutex> lock(mtx);
+    finished = true;
+    notEmpty.notify_all();
+}
+
+void consumer() {
+    while (true) {
+        unique_lock<mutex> lock(mtx);
+
+        notEmpty.wait(lock, [](){ return !bufferQ.empty() || finished; });
+
+        if (bufferQ.empty() && finished)
+            break;
+
+        int item = bufferQ.front();
+        bufferQ.pop();
+        cout << "Consumer consumed " << item << endl;
+
+        notFull.notify_one();
+    }
+}
+
+int main() {
+    thread t1(producer);
+    thread t2(consumer);
+
+    t1.join();
+    t2.join();
+
+    cout << "All items produced and consumed successfully!" << endl;
+    return 0;
+}
+
+
+Producer-Consumer Using Threads + Semaphores
+#include <iostream>
+#include <thread>
+#include <semaphore.h>
+#include <queue>
+using namespace std;
+
+queue<int> bufferQ;
+const int BUFFER_SIZE = 5;
+const int TOTAL_ITEMS = 10;
+
+sem_t emptySlots;   // counts empty spaces
+sem_t fullSlots;    // counts filled spaces
+sem_t mutexLock;    // binary semaphore for critical section
+
+void producer()
+{
+    for (int item = 1; item <= TOTAL_ITEMS; item++)
+    {
+        sem_wait(&emptySlots);      // wait for empty space
+        sem_wait(&mutexLock);       // lock critical section
+
+        bufferQ.push(item);
+        cout << "Producer produced " << item << endl;
+
+        sem_post(&mutexLock);       // unlock
+        sem_post(&fullSlots);       // signal: 1 more full slot
+    }
+}
+
+void consumer()
+{
+    for (int i = 1; i <= TOTAL_ITEMS; i++)
+    {
+        sem_wait(&fullSlots);       // wait for item
+        sem_wait(&mutexLock);       // lock
+
+        int item = bufferQ.front();
+        bufferQ.pop();
+        cout << "Consumer consumed " << item << endl;
+
+        sem_post(&mutexLock);       // unlock
+        sem_post(&emptySlots);      // signal: 1 more empty slot
+    }
+}
+
+int main()
+{
+    sem_init(&emptySlots, 0, BUFFER_SIZE); // initially all slots empty
+    sem_init(&fullSlots, 0, 0);            // no items initially
+    sem_init(&mutexLock, 0, 1);            // binary semaphore
+
+    thread prod(producer);
+    thread cons(consumer);
+
+    prod.join();
+    cons.join();
+
+    sem_destroy(&emptySlots);
+    sem_destroy(&fullSlots);
+    sem_destroy(&mutexLock);
+
+    cout << "All items produced & consumed successfully!" << endl;
+    return 0;
+}
+
+First In First Out (FIFO )
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter length of reference string: "; if(!(cin>>n)) return 0;
+    vector<int> ref(n); for(int i=0;i<n;i++) cin>>ref[i];
+    int frames; cout<<"Enter number of frames: "; cin>>frames;
+    vector<int> f(frames, -1);
+    int next=0, pageFaults=0;
+    for(int i=0;i<n;i++){
+        int page = ref[i];
+        bool found = find(f.begin(), f.end(), page) != f.end();
+        if(!found){
+            f[next] = page;
+            next = (next + 1) % frames;
+            pageFaults++;
+        }
+        cout<<"Ref "<<page<<": ";
+        for(int x: f) cout<<x<<" ";
+        cout<<"\n";
+    }
+    cout<<"Total page faults = "<<pageFaults<<"\n";
+}
+
+Least Recently Used ( LRU )
+
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter length of reference string: "; if(!(cin>>n)) return 0;
+    vector<int> ref(n); for(int i=0;i<n;i++) cin>>ref[i];
+    int frames; cout<<"Enter number of frames: "; cin>>frames;
+    vector<int> f(frames, -1), recent(frames, 0);
+    int time=0, faults=0;
+    for(int i=0;i<n;i++){
+        time++;
+        int page = ref[i];
+        bool hit=false;
+        for(int j=0;j<frames;j++) if(f[j]==page){ hit=true; recent[j]=time; break; }
+        if(!hit){
+            faults++;
+            int idx = -1;
+            for(int j=0;j<frames;j++) if(f[j]==-1){ idx=j; break; }
+            if(idx==-1){
+                idx = min_element(recent.begin(), recent.end()) - recent.begin();
+            }
+            f[idx]=page; recent[idx]=time;
+        }
+        cout<<"Ref "<<page<<": ";
+        for(int x: f) cout<<x<<" ";
+        cout<<"\n";
+    }
+    cout<<"Total page faults = "<<faults<<"\n";
+}
+
+
+Optimal
+#include <bits/stdc++.h>
+using namespace std;
+
+int findOptIndex(const vector<int>& framesArr, const vector<int>& ref, int idx){
+    int frames = framesArr.size();
+    int res = -1, farthest = -1;
+    for(int i=0;i<frames;i++){
+        int j;
+        for(j=idx;j<(int)ref.size();j++) if(framesArr[i]==ref[j]) break;
+        if(j==ref.size()) return i; // not used again
+        if(j > farthest){ farthest = j; res = i; }
+    }
+    return res==-1?0:res;
+}
+
+int main(){
+    int n; cout<<"Enter length of reference string: "; if(!(cin>>n)) return 0;
+    vector<int> ref(n); for(int i=0;i<n;i++) cin>>ref[i];
+    int frames; cout<<"Enter number of frames: "; cin>>frames;
+    vector<int> f(frames, -1);
+    int faults=0;
+    for(int i=0;i<n;i++){
+        int page = ref[i];
+        bool hit = find(f.begin(), f.end(), page) != f.end();
+        if(!hit){
+            faults++;
+            int placed = 0;
+            for(int j=0;j<frames;j++) if(f[j]==-1){ f[j]=page; placed=1; break; }
+            if(!placed){
+                int replace = findOptIndex(f, ref, i+1);
+                f[replace] = page;
+            }
+        }
+        cout<<"Ref "<<page<<": ";
+        for(int x:f) cout<<x<<" ";
+        cout<<"\n";
+    }
+    cout<<"Total page faults = "<<faults<<"\n";
+}
+
+Banker's Algorithm - Deadlock Avoidance
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n,m;
+    cout<<"Enter number of processes: "; cin>>n;
+    cout<<"Enter number of resource types: "; cin>>m;
+    vector<vector<int>> alloc(n, vector<int>(m)), mx(n, vector<int>(m)), need(n, vector<int>(m));
+    vector<int> avail(m);
+    cout<<"Enter Allocation matrix (n x m):\n";
+    for(int i=0;i<n;i++) for(int j=0;j<m;j++) cin>>alloc[i][j];
+    cout<<"Enter Max matrix (n x m):\n";
+    for(int i=0;i<n;i++) for(int j=0;j<m;j++) cin>>mx[i][j];
+    cout<<"Enter Available vector (m):\n";
+    for(int j=0;j<m;j++) cin>>avail[j];
+    for(int i=0;i<n;i++) for(int j=0;j<m;j++) need[i][j] = mx[i][j] - alloc[i][j];
+    vector<bool> finish(n,false);
+    vector<int> safeSeq;
+    for(int k=0;k<n;k++){
+        bool found=false;
+        for(int i=0;i<n;i++) if(!finish[i]){
+            bool ok=true;
+            for(int j=0;j<m;j++) if(need[i][j] > avail[j]){ ok=false; break; }
+            if(ok){
+                for(int j=0;j<m;j++) avail[j] += alloc[i][j];
+                finish[i]=true; safeSeq.push_back(i);
+                found=true;
+            }
+        }
+        if(!found) break;
+    }
+    if(all_of(finish.begin(), finish.end(), [](bool x){return x;})){
+        cout<<"System is in SAFE state.\nSafe sequence: ";
+        for(int x: safeSeq) cout<<"P"<<x+1<<" ";
+        cout<<"\n";
+    } else cout<<"System is NOT in SAFE state (unsafe)\n";
+    return 0;
+}
+
+FCFS (First-Come-First-Serve, non-preemptive)
+#include <bits/stdc++.h>
+using namespace std;
+
+int main(){
+    int n;
+    cout<<"Enter number of processes: ";
+    if(!(cin>>n)) return 0;
+    vector<int> bt(n), p(n);
+    for(int i=0;i<n;i++){ cout<<"Burst time P"<<i+1<<": "; cin>>bt[i]; p[i]=i+1; }
+    vector<int> wt(n), tat(n);
+    wt[0]=0;
+    for(int i=1;i<n;i++) wt[i]=wt[i-1]+bt[i-1];
+    for(int i=0;i<n;i++) tat[i]=wt[i]+bt[i];
+    double total_wt=accumulate(wt.begin(), wt.end(), 0.0), total_tat=accumulate(tat.begin(), tat.end(), 0.0);
+    cout<<"\nP\tBT\tWT\tTAT\n";
+    for(int i=0;i<n;i++) cout<<"P"<<p[i]<<'\t'<<bt[i]<<'\t'<<wt[i]<<'\t'<<tat[i]<<"\n";
+    cout<<"Avg WT = "<<fixed<<setprecision(2)<<total_wt/n<<"\n";
+    cout<<"Avg TAT = "<<fixed<<setprecision(2)<<total_tat/n<<"\n";
+    return 0;
+}
+
+Shortest Job First
+SJF (Non-preemptive)
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter number of processes: "; if(!(cin>>n)) return 0;
+    vector<int> bt(n), id(n);
+    for(int i=0;i<n;i++){ cout<<"Burst time P"<<i+1<<": "; cin>>bt[i]; id[i]=i+1; }
+    vector<pair<int,int>> v;
+    for(int i=0;i<n;i++) v.push_back({bt[i], id[i]});
+    sort(v.begin(), v.end()); // ascending bt
+    vector<int> wt(n), tat(n);
+    wt[0]=0;
+    for(int i=1;i<n;i++) wt[i]=wt[i-1]+v[i-1].first;
+    for(int i=0;i<n;i++) tat[i]=wt[i]+v[i].first;
+    cout<<"\nP\tBT\tWT\tTAT\n";
+    double total_wt=0, total_tat=0;
+    for(int i=0;i<n;i++){
+        cout<<"P"<<v[i].second<<"\t"<<v[i].first<<"\t"<<wt[i]<<"\t"<<tat[i]<<"\n";
+        total_wt+=wt[i]; total_tat+=tat[i];
+    }
+    cout<<"Avg WT = "<<fixed<<setprecision(2)<<total_wt/n<<"\n";
+    cout<<"Avg TAT = "<<fixed<<setprecision(2)<<total_tat/n<<"\n";
+}
+
+SRTF (Preemptive SJF)
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter number of processes: "; if(!(cin>>n)) return 0;
+    vector<int> at(n), bt(n), rem(n), id(n);
+    for(int i=0;i<n;i++){
+        cout<<"Arrival time of P"<<i+1<<": "; cin>>at[i];
+        cout<<"Burst time of P"<<i+1<<": "; cin>>bt[i];
+        rem[i]=bt[i]; id[i]=i+1;
+    }
+    int t=0, completed=0;
+    vector<int> wt(n,0), finish(n,0);
+    while(completed<n){
+        int idx=-1, mn=INT_MAX;
+        for(int i=0;i<n;i++){
+            if(at[i] <= t && rem[i]>0 && rem[i]<mn){
+                mn = rem[i]; idx=i;
+            }
+        }
+        if(idx==-1){ t++; continue; }
+        rem[idx]--; t++;
+        if(rem[idx]==0){
+            completed++;
+            finish[idx]=t;
+            wt[idx] = finish[idx] - at[idx] - bt[idx];
+            if(wt[idx]<0) wt[idx]=0;
+        }
+    }
+    cout<<"\nP\tAT\tBT\tWT\tTAT\n";
+    double total_wt=0, total_tat=0;
+    for(int i=0;i<n;i++){
+        int tat = bt[i] + wt[i];
+        cout<<"P"<<id[i]<<'\t'<<at[i]<<'\t'<<bt[i]<<'\t'<<wt[i]<<'\t'<<tat<<"\n";
+        total_wt+=wt[i]; total_tat+=tat;
+    }
+    cout<<"Avg WT = "<<fixed<<setprecision(2)<<total_wt/n<<"\n";
+    cout<<"Avg TAT = "<<fixed<<setprecision(2)<<total_tat/n<<"\n";
+    return 0;
+}
+Priority Scheduling (Non-preemptive)
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter number of processes: "; if(!(cin>>n)) return 0;
+    vector<int> bt(n), pr(n);
+    for(int i=0;i<n;i++){
+        cout<<"Burst time P"<<i+1<<": "; cin>>bt[i];
+        cout<<"Priority of P"<<i+1<<": "; cin>>pr[i]; // lower value = higher priority
+    }
+    vector<tuple<int,int,int>> v;
+    for(int i=0;i<n;i++) v.push_back({pr[i], bt[i], i+1});
+    sort(v.begin(), v.end());
+    vector<int> wt(n), tat(n);
+    wt[0]=0;
+    for(int i=1;i<n;i++) wt[i] = wt[i-1] + get<1>(v[i-1]);
+    for(int i=0;i<n;i++) tat[i] = wt[i] + get<1>(v[i]);
+    cout<<"\nP\tBT\tPR\tWT\tTAT\n";
+    double total_wt=0, total_tat=0;
+    for(int i=0;i<n;i++){
+        cout<<"P"<<get<2>(v[i])<<"\t"<<get<1>(v[i])<<"\t"<<get<0>(v[i])<<"\t"<<wt[i]<<"\t"<<tat[i]<<"\n";
+        total_wt+=wt[i]; total_tat+=tat[i];
+    }
+    cout<<"Avg WT = "<<fixed<<setprecision(2)<<total_wt/n<<"\n";
+    cout<<"Avg TAT = "<<fixed<<setprecision(2)<<total_tat/n<<"\n";
+}
+
+Priority Scheduling (Non-preemptive)
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter number of processes: "; if(!(cin>>n)) return 0;
+    vector<int> bt(n), pr(n);
+    for(int i=0;i<n;i++){
+        cout<<"Burst time P"<<i+1<<": "; cin>>bt[i];
+        cout<<"Priority of P"<<i+1<<": "; cin>>pr[i]; // lower value = higher priority
+    }
+    vector<tuple<int,int,int>> v;
+    for(int i=0;i<n;i++) v.push_back({pr[i], bt[i], i+1});
+    sort(v.begin(), v.end());
+    vector<int> wt(n), tat(n);
+    wt[0]=0;
+    for(int i=1;i<n;i++) wt[i] = wt[i-1] + get<1>(v[i-1]);
+    for(int i=0;i<n;i++) tat[i] = wt[i] + get<1>(v[i]);
+    cout<<"\nP\tBT\tPR\tWT\tTAT\n";
+    double total_wt=0, total_tat=0;
+    for(int i=0;i<n;i++){
+        cout<<"P"<<get<2>(v[i])<<"\t"<<get<1>(v[i])<<"\t"<<get<0>(v[i])<<"\t"<<wt[i]<<"\t"<<tat[i]<<"\n";
+        total_wt+=wt[i]; total_tat+=tat[i];
+    }
+    cout<<"Avg WT = "<<fixed<<setprecision(2)<<total_wt/n<<"\n";
+    cout<<"Avg TAT = "<<fixed<<setprecision(2)<<total_tat/n<<"\n";
+}
+
+Round Robin (RR)
+#include <bits/stdc++.h>
+using namespace std;
+int main(){
+    int n; cout<<"Enter number of processes: "; if(!(cin>>n)) return 0;
+    vector<int> bt(n), rem(n), id(n);
+    for(int i=0;i<n;i++){ cout<<"Burst time P"<<i+1<<": "; cin>>bt[i]; rem[i]=bt[i]; id[i]=i+1; }
+    int tq; cout<<"Enter time quantum: "; cin>>tq;
+    int t=0;
+    vector<int> wt(n,0);
+    bool done;
+    do {
+        done = true;
+        for(int i=0;i<n;i++){
+            if(rem[i] > 0){
+                done = false;
+                if(rem[i] > tq){
+                    rem[i] -= tq;
+                    t += tq;
+                } else {
+                    t += rem[i];
+                    wt[i] = t - bt[i];
+                    rem[i] = 0;
+                }
+            }
+        }
+    } while(!done);
+    cout<<"\nP\tBT\tWT\tTAT\n";
+    double total_wt=0, total_tat=0;
+    for(int i=0;i<n;i++){
+        int tat = bt[i] + wt[i];
+        cout<<"P"<<id[i]<<"\t"<<bt[i]<<"\t"<<wt[i]<<"\t"<<tat<<"\n";
+        total_wt += wt[i]; total_tat += tat;
+    }
+    cout<<"Avg WT = "<<fixed<<setprecision(2)<<total_wt/n<<"\n";
+    cout<<"Avg TAT = "<<fixed<<setprecision(2)<<total_tat/n<<"\n";
+    return 0;
+}
+Shell script: Sum of digits
+#!/bin/bash
+# Sum of digits of an integer (handles negative)
+read -p "Enter a number: " num
+n=${num#-}        # remove leading - if any
+sum=0
+while [ $n -gt 0 ]; do
+  digit=$(( n % 10 ))
+  sum=$(( sum + digit ))
+  n=$(( n / 10 ))
+done
+echo "Sum of digits of $num is $sum"
+
+Shell script: Sort array elements descending
+#!/bin/bash
+echo "Enter numbers (space separated):"
+read -a arr
+printf "%s\n" "${arr[@]}" | sort -nr
+echo "Sorted (desc): $(printf "%s\n" "${arr[@]}" | sort -nr | xargs)"
+
+Shell Script to Check Whether a Number is Prime
+#!/bin/bash
+
+read -p "Enter a number: " num
+
+if [ $num -lt 2 ]; then
+    echo "$num is NOT a prime number"
+    exit 0
+fi
+
+is_prime=1  # assume prime
+
+for ((i=2; i*i<=num; i++))
+do
+    if [ $((num % i)) -eq 0 ]; then
+        is_prime=0
+        break
+    fi
+done
+
+if [ $is_prime -eq 1 ]; then
+    echo "$num is a PRIME number"
+else
+    echo "$num is NOT a prime number"
+fi
+--------------------
+How to run
+chmod +x prime.sh
+./prime.sh
+
+Shell Script to Check Whether a String is Palindrome
+#!/bin/bash
+
+read -p "Enter a string: " str
+
+rev=$(echo "$str" | rev)
+
+if [ "$str" = "$rev" ]; then
+    echo "\"$str\" is a PALINDROME"
+else
+    echo "\"$str\" is NOT a palindrome"
+fi
+------
+chmod +x palindrome.sh
+./palindrome.sh
+
+Implementation of Classical Reader Writer problem using Threads and Mutex
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+using namespace std;
+
+mutex mtx;
+condition_variable cv;
+
+int readerCount = 0;      // number of readers currently reading
+bool writerActive = false; // true if a writer is writing
+
+// -------- Reader Function --------
+void reader(int id) {
+    unique_lock<mutex> lock(mtx);
+
+    // Readers wait if writer is active
+    cv.wait(lock, []() { return !writerActive; });
+
+    readerCount++;
+    cout << "Reader " << id << " starts reading. Readers active = " << readerCount << endl;
+
+    lock.unlock();
+
+    // simulate reading
+    this_thread::sleep_for(chrono::milliseconds(300));
+
+    lock.lock();
+    readerCount--;
+    cout << "Reader " << id << " finishes reading." << endl;
+
+    if (readerCount == 0)          // last reader signals writer
+        cv.notify_one();
+
+    lock.unlock();
+}
+
+// -------- Writer Function --------
+void writer(int id) {
+    unique_lock<mutex> lock(mtx);
+
+    // Writer waits if any reader OR writer is active
+    cv.wait(lock, []() { return !writerActive && readerCount == 0; });
+
+    writerActive = true;
+    cout << "Writer " << id << " starts writing..." << endl;
+
+    lock.unlock();
+
+    // simulate writing
+    this_thread::sleep_for(chrono::milliseconds(400));
+
+    lock.lock();
+    writerActive = false;
+    cout << "Writer " << id << " finishes writing." << endl;
+
+    cv.notify_all();               // wake ALL waiting readers/writers
+    lock.unlock();
+}
+
+// -------- MAIN --------
+int main() {
+
+    vector<thread> readers, writers;
+
+    // Create sample readers & writers
+    for (int i = 1; i <= 3; i++)
+        readers.push_back(thread(reader, i));
+
+    for (int i = 1; i <= 2; i++)
+        writers.push_back(thread(writer, i));
+
+    for (auto &t : readers) t.join();
+    for (auto &t : writers) t.join();
+
+    cout << "Reader-Writer demonstration completed!" << endl;
+    return 0;
+}
+
+Write a program demonstrating use of different system calls. 
+1) process related system call:fork,wait, 
+2) file related:open ,read,write,close
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
+int main() {
+    int fd;
+    char buffer[100];
+
+    // -------- File related system calls --------
+    printf("Opening file 'test.txt' using open()...\n");
+
+    // O_CREAT creates file if not exist, O_RDWR for read/write, 0644 = permissions
+    fd = open("test.txt", O_CREAT | O_RDWR, 0644);
+    if (fd < 0) {
+        perror("open");
+        exit(1);
+    }
+
+    printf("Writing to file using write()...\n");
+    write(fd, "Hello System Call Demo!\n", 25);
+
+    // Move file pointer to beginning for read()
+    lseek(fd, 0, SEEK_SET);
+
+    printf("Reading from file using read()...\n");
+    int n = read(fd, buffer, sizeof(buffer));
+    buffer[n] = '\0';
+
+    printf("Data read: %s\n", buffer);
+
+    printf("Closing file using close()...\n");
+    close(fd);
+
+
+    // -------- Process related system calls --------
+    printf("\nDemonstrating fork() and wait()...\n");
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork");
+        exit(1);
+    }
+    else if (pid == 0) {
+        // Child process
+        printf("Child Process: PID = %d\n", getpid());
+        printf("Child: Reading file again...\n");
+
+        int fd_child = open("test.txt", O_RDONLY);
+        n = read(fd_child, buffer, sizeof(buffer));
+        buffer[n] = '\0';
+
+        printf("Child read: %s\n", buffer);
+        close(fd_child);
+
+        exit(0);
+    }
+    else {
+        // Parent process
+        wait(NULL);     // wait for child
+        printf("Parent Process: PID = %d\n", getpid());
+        printf("Parent: Child finished execution.\n");
+    }
+
+    return 0;
+}
+
